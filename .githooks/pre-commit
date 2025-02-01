@@ -1,0 +1,61 @@
+#!/bin/bash
+
+# Stop on any error
+set -e
+
+# Get list of staged Go files
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.go$' || true)
+
+if [[ -z "$STAGED_FILES" ]]; then
+  echo "No Go files staged for commit. Skipping pre-commit checks."
+  exit 0
+fi
+
+echo "Running pre-commit checks..."
+
+# Format Go files
+echo "Formatting Go files..."
+for file in $STAGED_FILES; do
+  go fmt "$file"
+  git add "$file"
+  echo "Formatted: $file"
+done
+
+# Run static analysis
+if ! command -v staticcheck &> /dev/null; then
+  echo "staticcheck not found. Install it via 'go install honnef.co/go/tools/cmd/staticcheck@latest'"
+  echo "Documentation: https://staticcheck.io/docs"
+  exit 1
+fi
+echo "Running static analysis..."
+staticcheck $STAGED_FILES
+
+# Run golangci-lint for comprehensive linting
+if ! command -v golangci-lint &> /dev/null; then
+  echo "golangci-lint not found. Install it via 'go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest'"
+  echo "Documentation: https://golangci-lint.run/"
+  exit 1
+fi
+echo "Running golangci-lint..."
+golangci-lint run $STAGED_FILES
+
+# Prevent commits with TODO/FIXME comments
+echo "Checking for TODO/FIXME comments..."
+for file in $STAGED_FILES; do
+  if grep -E 'TODO|FIXME' "$file"; then
+    echo "Error: Found TODO/FIXME comments in $file. Please resolve before committing."
+    exit 1
+  fi
+done
+
+# Prevent commits with debug print statements
+echo "Checking for debug print statements..."
+for file in $STAGED_FILES; do
+  if grep -E '\b(fmt\.Print|log\.Print)' "$file"; then
+    echo "Error: Found debug print statements in $file. Remove them before committing."
+    exit 1
+  fi
+done
+
+echo "Pre-commit checks passed."
+exit 0

@@ -1,0 +1,44 @@
+#!/bin/bash
+
+# Stop on any error
+set -e
+
+echo "Running pre-push checks..."
+
+# Run tests
+echo "Running Go tests..."
+if ! go test ./...; then
+  echo "Tests failed. Fix errors before pushing."
+  exit 1
+fi
+
+# Prevent pushing large files (>5MB)
+echo "Checking for large files..."
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM)
+LARGE_FILES=$(echo "$STAGED_FILES" | xargs -I {} find {} -size +5M 2>/dev/null || true)
+
+if [[ -n "$LARGE_FILES" ]]; then
+  echo "Error: The following files exceed 5MB and cannot be pushed:"
+  echo "$LARGE_FILES"
+  exit 1
+fi
+
+# Optionally, run static analysis on the entire codebase
+if ! command -v staticcheck &> /dev/null; then
+  echo "staticcheck not found. Install it via 'go install honnef.co/go/tools/cmd/staticcheck@latest'"
+  echo "Documentation: https://staticcheck.io/docs"
+  exit 1
+fi
+echo "Running static analysis on the entire codebase..."
+staticcheck ./...
+
+if ! command -v golangci-lint &> /dev/null; then
+  echo "golangci-lint not found. Install it via 'go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest'"
+  echo "Documentation: https://golangci-lint.run/"
+  exit 1
+fi
+echo "Running golangci-lint on the entire codebase..."
+golangci-lint run ./...
+
+echo "Pre-push checks passed."
+exit 0
